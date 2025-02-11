@@ -151,19 +151,31 @@ private:
 
         // TODO: 
         // Add record to the index in the correct page, creating a overflow page if necessary
+	Page page;
+	indexFile.seekg(pageIndex * Page_SIZE, ios::beg);
+	page.read_from_data_file(indexFile);
+  // TODO: Insert record to page and write data to file
         if (!page.insert_record_into_page(record)) {
-            // If insertion fails, create an overflow page
-            Page overflowPage;
-            overflowPage.insert_record_into_page(record);
 
-            // Assign overflow page index
-            int overflowPageIndex = ++n;  
-            page.overflowPointerIndex = overflowPageIndex;
+		int overflowPageIndex = findOverflowPage(pageIndex);
+		if(overflowPageIndex == -1) {
+			overflowPageIndex = allocateNewPage();
+			page.overflowPointerIndex = overflowPageIndex;
+		}
+		indexFile.seekp(pageIndex * Page_SIZE, ios::beg);
+		page.write_into_data_file(indexFile);
 
-            // Write overflow page to the file
-            indexFile.seekp(overflowPageIndex * Page_SIZE, ios::beg);
-            overflowPage.write_into_data_file(indexFile);
-        }
+		overflowpage.insert_record_into_page(record);
+
+		indexFile.seekp(overflowPageIndex * Page_SIZE, ios::beg);
+		page.write_into_data_file(indexFile);
+	
+	} else {
+		indexFile.seekp(pageIndex * Page_SIZE, ios::beg);
+		page.write_into_data_file(indexFile);
+	}
+	    
+            
 
         numRecords++;
         // Check and Take neccessary steps if capacity is reached:
@@ -172,10 +184,8 @@ private:
 
 
 
-        // Seek to the appropriate position in the index file
-        indexFile.seekp(pageIndex * Page_SIZE, ios::beg);
-        // TODO: Insert record to page and write data to file
-
+        
+      
         // Close the index file
         indexFile.close();
     }
@@ -183,15 +193,59 @@ private:
     void OverflowHandler() {
         // TODO:
         // Calculate the average number of records per page
+	    double averageRecordsPerPage = (double)numRecords / n;
+	    double capacityThreshold = 0.7 * ( Page_SIZE / sizeof(Record));
+	    if (averageRecordPerPage > capacityThreshold){
+		    n++;
+		    if (n>(1<<i)){
+			    i++ 
+		    } 
+	    } 
+    
 
         // Take neccessary steps if capacity is reached
         // increase n; increase i (if necessary); redistribute records accordingly. place records in the new bucket that may have been originally misplaced due to a bit flip.
     }
 
+int findOverFlowPage(int pageIndex) {
+	fstream indexFile(fileName, ios::binary | ios::in  | ios::out);
+	if(!indexFile){
+		cerr << "ERROR : Unable to open index file for finding overflowpage " << endl;
+		return -1;
+	}
+	Page page;
+	indexFile.seekg(pageIndex * page_SIZE, ios::beg);
+	page.read_from_data_file(indexFile);
+
+	int overflowPageIndex = page.overflowPointerIndex;
+	indexFile.close();
+	return overflowPageIndex;
+}
+//allocate new page
+int allocateNewPage() {
+	fstream indexFile(fileName, ios::binary | ios::in | ios::out);
+	if (!indexFile) {
+		cerr << "ERROR Unable to open index file for allocating new page" << endl;
+		return -1;
+	}
+	indexFile.seekp(0, ios::end);
+	int newPageIndex = indexFile.tellp() / Page_SIZE;
+
+	Page newpage;
+	newpage.Write_into_data_file(indexFile);
+
+	indexFile.close();
+	return newPageIndex;
+}
+
     // Function to search for a record by ID in a given page of the index file
     void searchRecordByIdInPage(int pageIndex, int id) {
         // Open index file in binary mode for reading
         ifstream indexFile(fileName, ios::binary | ios::in);
+	if (!indexFile) {
+		cerr << "ERROR : Unable to open index file for searching." << endl;
+		return;
+	}
 
         // Seek to the appropriate position in the index file
         indexFile.seekg(pageIndex * Page_SIZE, ios::beg);
@@ -199,10 +253,22 @@ private:
         // Read the page from the index file
         Page page;
         page.read_from_data_file(indexFile);
-
+	For ( const auto &record : page.records) {
+		if (record.id == id){
+			record.print();
+			return;
+		} 
+	}
         // TODO:
         //  - Search for the record by ID in the page
         //  - Check for overflow pages and report if record with given ID is not found
+	if (page.overflowPointerIndex != -1 ) {
+		searchRecordByInPage(page.overflowPointerIndex, id);
+	} else { 
+		cout << "Record with ID " << id << "not found" << endl;
+	}
+	indexFile.close();
+
     }
 
 public:
@@ -227,12 +293,16 @@ public:
             while (getline(ss, item, ',')) {
                 fields.push_back(item);
             }
-            Record record(fields);
+		
+            
+		
 
             // TODO:
             //   - Compute hash value for the record's ID using compute_hash_value() function.
             //   - Insert the record into the appropriate page in the index file using addRecordToIndex() function.
-
+		Record record(fields);
+		int hashValue = compute_hash_value(record.id);
+		addRecordToIndex(hashvalue, record);
 
         }
 
@@ -248,7 +318,8 @@ public:
         // TODO:
         //  - Compute hash value for the given ID using compute_hash_value() function
         //  - Search for the record in the page corresponding to the hash value using searchRecordByIdInPage() function
-
+	    int hashvalue = compute_hash_value(id);
+	    searchRecordByIdInPage(hashvalue, id);
         // Close the index file
         indexFile.close();
     }
